@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>스마트 키오스크 프로토타입</title>
+    <style>
+        /* 세로형 키오스크 해상도 대응 (Full HD Portrait) */
+        :root {
+            --primary-color: rgba(10,103,166,100);
+            --accent-color: #ffc107;
+            --bg-color: #f4f4f4;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: var(--bg-color);
+            font-family: 'Noto Sans KR', sans-serif;
+            overflow: hidden; /* 스크롤 방지 */
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* 공통 헤더 */
+        header {
+            background: var(--primary-color);
+            color: white;
+            padding: 40px;
+            text-align: center;
+            font-size: 2.5rem;
+            font-weight: bold;
+        }
+
+        /* 메인 컨텐츠 영역 */
+        main {
+            flex: 1;
+            padding: 40px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 화면 전환용 섹션들 */
+        section {
+            display: none; /* 기본 숨김 */
+            width: 100%;
+            height: 100%;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        section.active {
+            display: flex; /* 활성화된 페이지만 표시 */
+        }
+
+        /* UI 컴포넌트: 버튼 */
+        .btn {
+            background: white;
+            border: 2px solid var(--primary-color);
+            color: var(--primary-color);
+            padding: 30px 60px;
+            font-size: 2rem;
+            border-radius: 20px;
+            margin: 20px;
+            cursor: pointer;
+            box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+            transition: 0.2s;
+        }
+
+        .btn:active {
+            transform: scale(0.95);
+        }
+
+        .btn-primary {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        /* 졸업 요건 그래프 스타일 */
+        .progress-container {
+            width: 90%;
+            margin: 30px 0;
+        }
+        .progress-label {
+            font-size: 1.5rem;
+            margin-bottom: 10px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background-color: #ddd;
+            border-radius: 15px;
+            overflow: hidden;
+        }
+        .progress-fill {
+            height: 100%;
+            background-color: var(--primary-color);
+            width: 0%; /* JS로 제어 */
+            transition: width 1s ease-in-out;
+        }
+
+        /* 결석계 카메라 및 서명 */
+        #camera-feed {
+            width: 100%;
+            background: #000;
+            object-fit: cover;
+            border-radius: 20px;
+        }
+        
+        canvas {
+            border: 2px dashed #999;
+            background: white;
+            border-radius: 10px;
+            cursor: crosshair;
+        }
+
+
+
+
+        /* --- 날짜 및 과목 선택 UI 스타일 --- */
+        .date-picker-container {
+            margin-bottom: 20px;
+            width: 90%;
+        }
+
+        input[type="date"] {
+            font-size: 1.5rem;
+            padding: 15px;
+            width: 100%;
+            border: 2px solid var(--primary-color);
+            border-radius: 10px;
+            font-family: inherit;
+            box-sizing: border-box; /* 패딩 포함 크기 계산 */
+        }
+
+        /* 수업 목록 컨테이너 */
+        #class-list-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            width: 90%;
+            margin-bottom: 30px;
+            max-height: 300px;
+            overflow-y: auto; /* 수업이 많으면 스크롤 */
+        }
+
+        /* 개별 수업 카드 (버튼 역할) */
+        .class-item {
+            background: white;
+            border: 2px solid #ddd;
+            border-radius: 15px;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        /* 수업 선택되었을 때 스타일 */
+        .class-item.selected {
+            border-color: var(--primary-color);
+            background-color: #e3f2fd; /* 연한 파란색 */
+            box-shadow: 0 4px 8px rgba(0, 86, 179, 0.2);
+        }
+
+        .class-item .time {
+            font-weight: bold;
+            color: #555;
+            font-size: 1.2rem;
+        }
+
+        .class-item .name {
+            font-size: 1.4rem;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .class-item .check-icon {
+            font-size: 1.5rem;
+            color: transparent; /* 기본은 안보임 */
+        }
+
+        .class-item.selected .check-icon {
+            color: var(--primary-color); /* 선택되면 보임 */
+        }
+    </style>
+</head>
+<body>
+
+    <header>동양미래대학교 스마트 키오스크</header>
+
+    <main>
+        <section id="page-idle" class="active">
+            <div style="font-size: 3rem; margin-bottom: 50px;">학생증을 태그해주세요</div>
+            <div style="width: 300px; height: 300px; background: #ddd; border-radius: 50%; display: flex; align-items: center; justify-content: center;">
+                <span style="font-size: 5rem;">💳</span>
+            </div>
+            <button class="btn btn-primary" onclick="simulateLogin()">[TEST] RFID 학생증 태그 시뮬레이션</button>
+        </section>
+
+        <section id="page-menu">
+            <h1 id="user-greeting">반갑습니다, 000님</h1>
+            <div style="display: grid; grid-template-columns: 1fr; gap: 20px; width: 80%;">
+                <button class="btn" onclick="showGraduation()">🎓 졸업 요건 확인</button>
+                <button class="btn" onclick="showAbsence()">📝 전자 결석계 작성</button>
+                <button class="btn" style="background:#666; color:white;" onclick="logout()">로그아웃</button>
+            </div>
+        </section>
+
+        <section id="page-graduation">
+            <h2>나의 졸업 달성도</h2>
+            <div id="charts-area" style="width: 100%;">
+                </div>
+            <button class="btn" onclick="goBack()">뒤로 가기</button>
+        </section>
+
+        <section id="page-absence">
+            <h2 style="margin-bottom: 10px;">전자 결석계 제출</h2>
+            
+            <div style="width: 100%; display:flex; flex-direction:column; align-items:center;">
+                <div class="date-picker-container">
+                    <label style="display:block; margin-bottom:10px; font-weight:bold;">결석 일자 선택</label>
+                    <input type="date" id="absence-date" onchange="loadClassesForDate()">
+                </div>
+
+                <div id="class-list-container">
+                    </div>
+            </div>
+
+            <div style="width: 90%; margin-bottom: 20px; border-top: 1px solid #ccc; padding-top: 20px;">
+                <h3>증빙서류 및 서명</h3>
+                
+                <div style="margin-bottom: 15px;">
+                    <video id="camera-feed" autoplay playsinline style="height: 200px;"></video>
+                    <button class="btn" style="padding: 10px 20px; font-size: 1.2rem;" onclick="captureDoc()">📸 서류 촬영</button>
+                </div>
+
+                <canvas id="sign-pad" width="600" height="150" style="width:100%; height:150px;"></canvas>
+                
+                <div style="margin-top: 20px; display: flex; justify-content: space-between;">
+                    <button class="btn" onclick="goBack()" style="flex:1; margin: 5px; background:#666; color:white;">취소</button>
+                    <button class="btn btn-primary" onclick="submitAbsence()" style="flex:2; margin: 5px;">제출하기</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // --- 1. Mock Data (백엔드 데이터 흉내) ---
+        const mockUser = {
+            name: "김멍멍",
+            id: "20231234",
+            major: "컴퓨터소프트웨어공학과",
+            graduation: {
+                total: { current: 100, required: 130 },
+                major: { current: 60, required: 70 },
+                general: { current: 40, required: 50 }
+            }
+        };
+
+        // --- 2. 화면 전환 로직 ---
+        function navigateTo(pageId) {
+            document.querySelectorAll('section').forEach(sec => sec.classList.remove('active'));
+            document.getElementById(pageId).classList.add('active');
+        }
+
+        function simulateLogin() {
+            // 실제라면 여기서 API 호출
+            document.getElementById('user-greeting').innerText = `반갑습니다, ${mockUser.name} 학우님`;
+            navigateTo('page-menu');
+        }
+
+        function goBack() {
+            navigateTo('page-menu');
+        }
+
+        function logout() {
+            // 초기화 로직
+            navigateTo('page-idle');
+        }
+
+        // --- 3. 졸업 요건 기능 (차트 렌더링) ---
+        function showGraduation() {
+            const container = document.getElementById('charts-area');
+            container.innerHTML = ''; // 초기화
+
+            const data = mockUser.graduation;
+            const items = [
+                { label: "총 학점", curr: data.total.current, req: data.total.required },
+                { label: "전공 학점", curr: data.major.current, req: data.major.required },
+                { label: "교양 학점", curr: data.general.current, req: data.general.required }
+            ];
+
+            items.forEach(item => {
+                const percent = Math.min((item.curr / item.req) * 100, 100);
+                const html = `
+                    <div class="progress-container">
+                        <div class="progress-label">
+                            <span>${item.label}</span>
+                            <span>${item.curr} / ${item.req} (${Math.round(percent)}%)</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: ${percent}%"></div>
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += html;
+            });
+
+            navigateTo('page-graduation');
+        }
+
+        // --- 4. 전자 결석계 기능 (카메라 & 서명) ---
+        let videoStream = null;
+
+        function showAbsence() {
+            navigateTo('page-absence');
+            initCamera();
+            initSignaturePad();
+        }
+
+        // 카메라 초기화 (Web API)
+        async function initCamera() {
+            const video = document.getElementById('camera-feed');
+            try {
+                // 후면 카메라 우선 요청 (모바일/키오스크 환경)
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment" } 
+                });
+                video.srcObject = stream;
+                videoStream = stream;
+            } catch (err) {
+                console.error("카메라 접근 실패:", err);
+                alert("카메라를 찾을 수 없습니다. (HTTPS 환경인지 확인해주세요)");
+            }
+        }
+
+        function captureDoc() {
+            alert("증빙 서류가 이미지로 캡처되었습니다. (가상 동작)");
+            // 실제 구현시: Canvas에 video 프레임을 그려서 이미지 데이터(Base64)로 변환
+        }
+
+        // 서명 패드 (Canvas API)
+        let isDrawing = false;
+        let canvas, ctx;
+
+        function initSignaturePad() {
+            canvas = document.getElementById('sign-pad');
+            ctx = canvas.getContext('2d');
+            ctx.lineWidth = 3;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = '#000';
+
+            // 마우스/터치 이벤트 바인딩
+            canvas.addEventListener('mousedown', startDraw);
+            canvas.addEventListener('mousemove', draw);
+            canvas.addEventListener('mouseup', endDraw);
+            canvas.addEventListener('touchstart', (e) => startDraw(e.touches[0]));
+            canvas.addEventListener('touchmove', (e) => {
+                e.preventDefault(); // 스크롤 방지
+                draw(e.touches[0]);
+            });
+            canvas.addEventListener('touchend', endDraw);
+        }
+
+        function startDraw(e) {
+            isDrawing = true;
+            ctx.beginPath();
+            const rect = canvas.getBoundingClientRect();
+            ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            const rect = canvas.getBoundingClientRect();
+            ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+            ctx.stroke();
+        }
+
+        function endDraw() {
+            isDrawing = false;
+        }
+
+        function clearSign() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function submitAbsence() {
+            alert("결석계가 행정실로 전송되었습니다!");
+            // 실제 구현시: 캡처된 이미지 + 서명 데이터 + 폼 데이터를 JSON으로 묶어 서버 전송
+            goBack();
+        }
+
+
+        const mockSchedule = {
+            // 0: 일, 1: 월, 2: 화 ...
+            1: [ // 월요일
+                { id: 'mon1', time: '09:00 - 10:30', name: '자료구조' },
+                { id: 'mon2', time: '10:30 - 12:00', name: '컴퓨터구조' },
+                { id: 'mon3', time: '13:00 - 15:00', name: '대학영어' }
+            ],
+            2: [ // 화요일
+                { id: 'tue1', time: '14:00 - 16:00', name: '웹프로그래밍' },
+                { id: 'tue2', time: '16:00 - 18:00', name: '운영체제' }
+            ],
+            3: [ // 수요일
+                { id: 'wed1', time: '09:00 - 12:00', name: '캡스톤디자인' }
+            ],
+            4: [ // 목요일
+                { id: 'thu1', time: '09:00 - 10:30', name: '자료구조' },
+                { id: 'thu2', time: '10:30 - 12:00', name: '컴퓨터구조' }
+            ],
+            5: [ // 금요일
+                { id: 'fri1', time: '10:00 - 13:00', name: '인공지능개론' }
+            ]
+        };
+
+        let selectedClassIds = []; // 선택된 수업 ID 저장
+
+        // --- 결석계 화면 진입 시 초기화 ---
+        function showAbsence() {
+            navigateTo('page-absence');
+            
+            // 1. 날짜를 '오늘'로 기본 설정
+            const today = new Date();
+            const dateStr = today.toISOString().split('T')[0]; // YYYY-MM-DD 형식
+            const dateInput = document.getElementById('absence-date');
+            dateInput.value = dateStr;
+
+            // 2. 오늘 날짜 기준 수업 로드
+            loadClassesForDate();
+
+            // 3. 카메라 및 서명 초기화 (기존 함수 재사용)
+            initCamera();
+            initSignaturePad();
+        }
+
+        // --- 날짜 변경 시 수업 목록 로드 ---
+        function loadClassesForDate() {
+            const dateInput = document.getElementById('absence-date');
+            const listContainer = document.getElementById('class-list-container');
+            const dateObj = new Date(dateInput.value);
+            const dayOfWeek = dateObj.getDay(); // 0(일) ~ 6(토)
+
+            selectedClassIds = []; // 선택 초기화
+            listContainer.innerHTML = ''; // 목록 비우기
+
+            const classes = mockSchedule[dayOfWeek];
+
+            if (!classes || classes.length === 0) {
+                listContainer.innerHTML = '<div style="text-align:center; padding:20px; color:#666;">해당 날짜에는 수업이 없습니다.</div>';
+                return;
+            }
+
+            // 수업 목록 생성
+            classes.forEach(cls => {
+                const item = document.createElement('div');
+                item.className = 'class-item';
+                item.onclick = () => toggleClassSelection(item, cls.id); // 클릭 이벤트 연결
+                
+                item.innerHTML = `
+                    <div>
+                        <div class="time">${cls.time}</div>
+                        <div class="name">${cls.name}</div>
+                    </div>
+                    <div class="check-icon">✔</div>
+                `;
+                listContainer.appendChild(item);
+            });
+        }
+
+        // --- 수업 선택/해제 토글 로직 ---
+        function toggleClassSelection(element, classId) {
+            if (selectedClassIds.includes(classId)) {
+                // 이미 선택됨 -> 해제
+                selectedClassIds = selectedClassIds.filter(id => id !== classId);
+                element.classList.remove('selected');
+            } else {
+                // 선택 안됨 -> 선택
+                selectedClassIds.push(classId);
+                element.classList.add('selected');
+            }
+        }
+
+        // --- 제출 버튼 수정 ---
+        function submitAbsence() {
+            // 유효성 검사
+            if (selectedClassIds.length === 0) {
+                alert("결석한 수업을 최소 하나 이상 선택해주세요.");
+                return;
+            }
+            
+            // (여기서 서명 여부나 사진 여부도 체크 가능)
+
+            // 제출 완료 메시지
+            const date = document.getElementById('absence-date').value;
+            alert(`[${date}] 날짜의 수업 ${selectedClassIds.length}건에 대한\n결석계가 제출되었습니다.`);
+            
+            // 초기화 및 뒤로가기
+            selectedClassIds = [];
+            goBack();
+        }
+    </script>
+</body>
+</html>
